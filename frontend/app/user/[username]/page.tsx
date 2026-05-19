@@ -66,10 +66,13 @@ export default function ChatPage() {
     }
     // Guard: prevent messaging yourself
 // Safely prevent messaging yourself if both values are valid
-    if (username && currentUser && username === currentUser) {
-      router.push('/messages');
-      return;
-    }
+
+    // if (username && currentUser && username === currentUser) 
+    //   {
+    //   router.push('/messages');
+    //   return;
+    // }
+
     loadData();
 
     return () => {
