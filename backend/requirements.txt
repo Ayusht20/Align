@@ -9,3 +9,4 @@ alembic
 pydantic[email]
 supabase
 bcrypt==4.0.1
+python-multipart
