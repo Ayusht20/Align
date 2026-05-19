@@ -18,12 +18,12 @@ app = FastAPI(
 )
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────
-# Add your Vercel frontend URL here when you deploy
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3000",       # Next.js dev server
-        "https://align.vercel.app",    # replace with your real Vercel URL
+        "http://localhost:3000",      
+        "https://align-one-tau.vercel.app",   
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -48,6 +48,3 @@ def root():
     return {"status": "ok", "app": "Align API"}
 
 
-# ─── Run locally ──────────────────────────────────────────────────────────────
-# uvicorn main:app --reload
-# Interactive docs → http://localhost:8000/docs
