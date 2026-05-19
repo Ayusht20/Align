@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import api from '@/lib/api';
@@ -15,7 +15,7 @@ interface SearchResults {
 
 type Tab = 'all' | 'posts' | 'communities' | 'users';
 
-export default function SearchPage() {
+function SearchPageContent() {
   const searchParams = useSearchParams();
   const router       = useRouter();
   const initialQ     = searchParams.get('q') || '';
@@ -213,5 +213,26 @@ export default function SearchPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function SearchPage() {
+  return (
+    <Suspense fallback={
+      <div className="max-w-2xl mx-auto animate-fade-in">
+        <div className="skeleton h-12 rounded-2xl mb-6" />
+        <div className="space-y-3">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="rounded-2xl border p-4"
+              style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+              <div className="skeleton h-4 w-2/3 rounded mb-2" />
+              <div className="skeleton h-3 w-1/2 rounded" />
+            </div>
+          ))}
+        </div>
+      </div>
+    }>
+      <SearchPageContent />
+    </Suspense>
   );
 }
