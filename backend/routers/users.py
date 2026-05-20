@@ -14,7 +14,7 @@ SUPABASE_URL         = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 SUPABASE_BUCKET      = os.getenv("SUPABASE_BUCKET", "post-images")
 ALLOWED_TYPES        = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif"}
-MAX_SIZE_BYTES       = 2 * 1024 * 1024
+MAX_SIZE_BYTES       = 5 * 1024 * 1024
 
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
@@ -86,6 +86,25 @@ async def upload_avatar(
     contents = await file.read()
     if len(contents) > MAX_SIZE_BYTES:
         raise HTTPException(status_code=400, detail="File too large. Max 5MB.")
+
+    # Auto-crop to square so any aspect ratio works
+    try:
+        from PIL import Image
+        import io
+        img = Image.open(io.BytesIO(contents))
+        # Crop to center square
+        w, h   = img.size
+        size   = min(w, h)
+        left   = (w - size) // 2
+        top    = (h - size) // 2
+        img    = img.crop((left, top, left + size, top + size))
+        img    = img.resize((400, 400), Image.LANCZOS)
+        buf    = io.BytesIO()
+        fmt    = 'JPEG' if file.content_type == 'image/jpeg' else 'PNG'
+        img.save(buf, format=fmt, quality=85)
+        contents = buf.getvalue()
+    except Exception:
+        pass  # If PIL fails, upload original
 
     ext      = ALLOWED_TYPES[file.content_type]
     filename = f"avatars/{current_user.id}_{uuid.uuid4().hex}{ext}"
