@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { login } from '@/lib/auth';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '@/app/context/AuthContext';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -39,10 +39,8 @@ export default function LoginPage() {
 
           <div className="p-8">
             <div className="flex justify-center mb-6">
-              <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-white font-bold text-2xl shadow-lg animate-pop-in"
-                style={{ background: 'linear-gradient(135deg, #fb923c, #ec4899)' }}>
-                A
-              </div>
+              <img src="/align.png" alt="Align"
+                className="w-14 h-14 rounded-2xl object-cover shadow-lg animate-pop-in" />
             </div>
 
             <h1 className="text-2xl font-bold text-center mb-1" style={{ color: 'var(--text-primary)' }}>

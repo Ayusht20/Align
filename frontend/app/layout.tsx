@@ -2,14 +2,19 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
 import Navbar from '@/components/Navbar';
-import { ThemeProvider } from './context/ThemeContext';
-import { AuthProvider } from './context/AuthContext';
+import { ThemeProvider } from '@/app/context/ThemeContext';
+import { AuthProvider } from '@/app/context/AuthContext';
 
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
   title: 'Align',
   description: 'A community discussion platform',
+  icons: {
+    icon: '/align.png',
+    apple: '/align.png',
+    shortcut: '/align.png',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

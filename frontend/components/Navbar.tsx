@@ -93,11 +93,18 @@ export default function Navbar() {
       <div className="max-w-5xl mx-auto px-4 h-14 flex items-center gap-3">
 
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-2 group shrink-0">
-          <div className="w-8 h-8 rounded-xl flex items-center justify-center text-white font-bold text-sm shadow-md transition-all group-hover:scale-110 group-hover:rotate-6"
-            style={{ background: 'linear-gradient(135deg,#fb923c,#ec4899)' }}>A</div>
-          <span className="text-lg font-bold hidden sm:block" style={{ color: 'var(--text-primary)' }}>Align</span>
-        </Link>
+     <Link href="/" className="flex items-center gap-2 group shrink-0">
+  <img
+    src="/align.png"
+    alt="Align"
+    className="w-13 h-13 rounded-xl object-cover transition-all duration-200 group-hover:scale-110 group-hover:rotate-3 shadow-md bg-blue-50  "
+    style={{ 
+      objectPosition: 'center top'  // focus on the icon part not text
+      // background: '#000'             // keeps black bg contained to rounded box
+    }}
+  />
+  <span className="text-lg font-bold hidden sm:block" style={{ color: 'var(--text-primary)' }}>Align</span>
+</Link>
 
         {/* Search bar — desktop */}
         <form onSubmit={handleSearch} className="flex-1 max-w-sm hidden md:block">
