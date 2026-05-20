@@ -6,404 +6,252 @@ import Link from 'next/link';
 import api from '@/lib/api';
 import { isLoggedIn, getTokenPayload } from '@/lib/auth';
 import Avatar from '@/components/Avatar';
+import PostCard, { PostData } from '@/components/PostCard';
 
-interface Message {
-  id: number;
-  content: string;
-  sender_username: string;
-  receiver_username: string;
-  created_at: string;
-  is_mine: boolean;
+interface Profile {
+  id: number; username: string; bio: string | null;
+  avatar_url: string | null; created_at: string;
+  post_count: number; karma: number; posts: PostData[];
 }
 
-interface OtherUser {
-  username: string;
-  avatar_url: string | null;
-  bio: string | null;
-  id: number;
-}
+export default function ProfilePage() {
+  const { username } = useParams<{ username: string }>();
+  const router         = useRouter();
+  const [profile,  setProfile]  = useState<Profile | null>(null);
+  const [loading,  setLoading]  = useState(true);
+  const [notFound, setNotFound] = useState(false);
+  const [isOwner,  setIsOwner]  = useState(false);
+  const [loggedIn, setLoggedIn] = useState(false);
 
-function timeAgo(d: string) {
-  const s = Math.floor((Date.now() - new Date(d).getTime()) / 1000);
-  if (s < 60)    return 'just now';
-  if (s < 3600)  return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
+  const [editing,    setEditing]    = useState(false);
+  const [bio,        setBio]        = useState('');
+  const [bioLoading, setBioLoading] = useState(false);
+  const [bioError,   setBioError]   = useState('');
 
-function getDateLabel(dateStr: string) {
-  const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
-  if (diff === 0) return 'Today';
-  if (diff === 1) return 'Yesterday';
-  return new Date(dateStr).toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
-}
-
-export default function ChatPage() {
-  const { username }  = useParams<{ username: string }>();
-  const router        = useRouter();
-  const payload       = getTokenPayload();
-  const currentUser   = payload?.username || '';
-  const currentUserId = payload?.sub || '';
-
-  const [messages,  setMessages]  = useState<Message[]>([]);
-  const [otherUser, setOtherUser] = useState<OtherUser | null>(null);
-  const [input,     setInput]     = useState('');
-  const [sending,   setSending]   = useState(false);
-  // Start as true — never flash "not found" before data loads
-  const [loading,   setLoading]   = useState(true);
-  const [notFound,  setNotFound]  = useState(false);
-  const [connected, setConnected] = useState(false);
-
-  const bottomRef  = useRef<HTMLDivElement>(null);
-  const inputRef   = useRef<HTMLTextAreaElement>(null);
-  const channelRef = useRef<any>(null);
+  const [avatarLoading, setAvatarLoading] = useState(false);
+  const [avatarError,   setAvatarError]   = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    // Guard: redirect to login if not authenticated
-    if (!isLoggedIn()) {
-      router.push('/login');
-      return;
+    fetchProfile();
+    const logged = isLoggedIn();
+    setLoggedIn(logged);
+    if (logged) {
+      const p = getTokenPayload();
+      setIsOwner(p?.username === username);
     }
-    // Guard: prevent messaging yourself
-// Safely prevent messaging yourself if both values are valid
-
-    if (username && currentUser && username === currentUser) 
-      {
-      router.push('/messages');
-      return;
-    }
-
-    loadData();
-
-    return () => {
-      if (channelRef.current) {
-        try {
-          // Cleanup supabase channel if it exists
-          channelRef.current.unsubscribe?.();
-        } catch {}
-      }
-    };
   }, [username]);
 
-  async function loadData() {
+  async function fetchProfile() {
     setLoading(true);
-    setNotFound(false);
     try {
-      // Fetch user profile and conversation in parallel
-      const [userRes, msgRes] = await Promise.all([
-        api.get(`/api/users/${username}`),
-        api.get(`/api/messages/conversation/${username}`),
-      ]);
-      setOtherUser(userRes.data);
-      setMessages(msgRes.data);
-
-      // Try to set up realtime if supabase is available
-      setupRealtime(userRes.data.id);
-    } catch (err: any) {
-      // Only show not found if it's actually a 404
-      if (err?.response?.status === 404) {
-        setNotFound(true);
-      } else {
-        // For auth errors or network issues, retry once after a short delay
-        setTimeout(async () => {
-          try {
-            const [userRes, msgRes] = await Promise.all([
-              api.get(`/api/users/${username}`),
-              api.get(`/api/messages/conversation/${username}`),
-            ]);
-            setOtherUser(userRes.data);
-            setMessages(msgRes.data);
-            setupRealtime(userRes.data.id);
-          } catch {
-            setNotFound(true);
-          }
-        }, 800);
-      }
-    } finally {
-      setLoading(false);
-    }
+      const r = await api.get(`/api/users/${username}`);
+      setProfile(r.data);
+      setBio(r.data.bio || '');
+    } catch { setNotFound(true); }
+    finally { setLoading(false); }
   }
 
-  function setupRealtime(otherUserId: number) {
-    // Gracefully skip if supabase env vars not set yet
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-      setConnected(false);
-      return;
-    }
+  async function saveBio() {
+    if (bio.length > 300) { setBioError('Max 300 characters.'); return; }
+    setBioLoading(true); setBioError('');
     try {
-      const { createClient } = require('@supabase/supabase-js');
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-      );
-      const myId = parseInt(currentUserId);
-      const channel = supabase
-        .channel(`chat:${Math.min(myId, otherUserId)}-${Math.max(myId, otherUserId)}`)
-        .on('postgres_changes', {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `sender_id=eq.${otherUserId}`,
-        }, (payload: any) => {
-          const row = payload.new;
-          if (row.receiver_id !== myId) return;
-          setMessages(prev => {
-            if (prev.some(m => m.id === row.id)) return prev;
-            return [...prev, {
-              id: row.id,
-              content: row.content,
-              sender_username: username,
-              receiver_username: currentUser,
-              created_at: row.created_at,
-              is_mine: false,
-            }];
-          });
-        })
-        .subscribe((status: string) => {
-          setConnected(status === 'SUBSCRIBED');
-        });
-      channelRef.current = channel;
-    } catch {
-      // Supabase not available — silent fallback, chat still works
-      setConnected(false);
-    }
+      await api.patch('/api/users/me/bio', { bio });
+      setProfile(p => p ? { ...p, bio } : p);
+      setEditing(false);
+    } catch { setBioError('Failed to save. Try again.'); }
+    finally { setBioLoading(false); }
   }
 
-  // Auto scroll on new messages
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  async function sendMessage(e?: React.FormEvent) {
-    e?.preventDefault();
-    const content = input.trim();
-    if (!content || sending) return;
-
-    const tempId = Date.now();
-    const optimistic: Message = {
-      id: tempId,
-      content,
-      sender_username: currentUser,
-      receiver_username: username,
-      created_at: new Date().toISOString(),
-      is_mine: true,
-    };
-    setMessages(prev => [...prev, optimistic]);
-    setInput('');
-    setSending(true);
-
+  async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]; if (!file) return;
+    if (!['image/jpeg','image/png','image/webp','image/gif'].includes(file.type)) {
+      setAvatarError('JPG, PNG, WEBP or GIF only.'); return;
+    }
+    if (file.size > 5 * 1024 * 1024) { setAvatarError('Max 5MB.'); return; }
+    setAvatarLoading(true); setAvatarError('');
     try {
-      const r = await api.post('/api/messages/', { receiver_username: username, content });
-      setMessages(prev => prev.map(m => m.id === tempId ? r.data : m));
-    } catch {
-      setMessages(prev => prev.filter(m => m.id !== tempId));
-      setInput(content);
-    } finally {
-      setSending(false);
-      inputRef.current?.focus();
-    }
+      const fd = new FormData(); fd.append('file', file);
+      const r = await api.post('/api/users/me/avatar', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setProfile(p => p ? { ...p, avatar_url: r.data.avatar_url } : p);
+    } catch { setAvatarError('Upload failed. Try again.'); }
+    finally { setAvatarLoading(false); }
   }
 
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-  }
-
-  // Build rendered list with date separators
-  const rendered: Array<{ type: 'date'; label: string } | { type: 'msg'; msg: Message }> = [];
-  let lastDate = '';
-  for (const msg of messages) {
-    const label = getDateLabel(msg.created_at);
-    if (label !== lastDate) { rendered.push({ type: 'date', label }); lastDate = label; }
-    rendered.push({ type: 'msg', msg });
-  }
-
-  // ── Loading state ──
   if (loading) return (
-    <div className="max-w-2xl mx-auto animate-fade-in" style={{ height: 'calc(100vh - 100px)' }}>
-      <div className="h-full flex flex-col rounded-3xl border overflow-hidden shadow-lg"
+    <div className="max-w-3xl mx-auto space-y-4 animate-fade-in">
+      <div className="rounded-3xl border overflow-hidden"
         style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
-        <div className="p-4 border-b flex items-center gap-3" style={{ borderColor: 'var(--border)' }}>
-          <div className="skeleton w-10 h-10 rounded-full shrink-0" />
-          <div className="space-y-2 flex-1">
-            <div className="skeleton h-4 w-32 rounded-lg" />
-            <div className="skeleton h-3 w-20 rounded-lg" />
-          </div>
-        </div>
-        <div className="flex-1 p-4 space-y-3" style={{ backgroundColor: 'var(--bg-secondary)' }}>
-          {[40, 60, 35, 70, 50].map((w, i) => (
-            <div key={i} className={`flex ${i % 2 === 0 ? '' : 'justify-end'}`}>
-              <div className="skeleton rounded-2xl" style={{ width: `${w}%`, height: 44 }} />
-            </div>
-          ))}
-        </div>
-        <div className="p-4 border-t" style={{ borderColor: 'var(--border)' }}>
-          <div className="skeleton h-12 rounded-2xl" />
+        <div className="skeleton" style={{ height: 128 }} />
+        <div className="p-6 space-y-3">
+          <div className="skeleton w-24 h-24 rounded-full" style={{ marginTop: -48 }} />
+          <div className="skeleton h-6 w-40 rounded-xl" />
+          <div className="skeleton h-4 w-64 rounded-xl" />
         </div>
       </div>
     </div>
   );
 
-  // ── Not found ──
   if (notFound) return (
-    <div className="text-center py-24 animate-fade-in">
+    <div className="text-center py-28 animate-fade-in">
       <div className="text-6xl mb-4 animate-pop-in">👤</div>
-      <p className="font-bold text-lg mb-1" style={{ color: 'var(--text-primary)' }}>
-        User &quot;{username}&quot; not found
-      </p>
-      <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
-        Make sure the username is correct and they have an Align account.
-      </p>
-      <Link href="/messages"
-        className="btn-primary inline-block px-6 text-sm">
-        ← Back to messages
-      </Link>
+      <p className="font-bold text-lg" style={{ color: 'var(--text-primary)' }}>User not found</p>
+      <Link href="/" className="text-orange-500 hover:underline text-sm mt-2 block">← Back to home</Link>
     </div>
   );
 
   return (
-    <div className="max-w-2xl mx-auto animate-fade-in" style={{ height: 'calc(100vh - 100px)' }}>
-      <div className="h-full flex flex-col rounded-3xl border overflow-hidden shadow-lg"
+    <div className="max-w-3xl mx-auto space-y-5 animate-fade-in">
+      <div className="rounded-3xl border overflow-hidden shadow-md"
         style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
 
-        {/* ── Header ── */}
-        <div className="px-5 py-3.5 border-b flex items-center gap-3 shrink-0"
-          style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
-          <Link href="/messages"
-            className="w-8 h-8 rounded-xl flex items-center justify-center transition-all hover:scale-110 shrink-0"
-            style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}>
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width={16} height={16}>
-              <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7"/>
-            </svg>
-          </Link>
+        {/* Banner */}
+        <div style={{
+          height: 128,
+          background: 'linear-gradient(to right, #fb923c, #ec4899, #6366f1)',
+          position: 'relative',
+        }}>
+          <div style={{
+            position: 'absolute', inset: 0, opacity: 0.15,
+            backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)',
+            backgroundSize: '32px 32px',
+          }} />
+        </div>
 
-          <Link href={`/user/${otherUser?.username}`}
-            className="flex items-center gap-2.5 flex-1 min-w-0 hover:opacity-80 transition-opacity">
-            <Avatar url={otherUser?.avatar_url} username={otherUser?.username || ''} size="sm" />
-            <div className="min-w-0">
-              <p className="text-sm font-bold leading-tight truncate" style={{ color: 'var(--text-primary)' }}>
-                u/{otherUser?.username}
-              </p>
-              {otherUser?.bio && (
-                <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{otherUser.bio}</p>
+        <div className="px-6 pb-6">
+          {/* Avatar + buttons row */}
+          <div className="flex items-end justify-between flex-wrap gap-3" style={{ marginTop: -56, marginBottom: 16 }}>
+            <div className="relative group">
+              <Avatar url={profile?.avatar_url} username={profile?.username || ''} size="xl" />
+              {isOwner && (
+                <>
+                  <button
+                    onClick={() => fileRef.current?.click()}
+                    disabled={avatarLoading}
+                    className="absolute inset-0 rounded-full flex flex-col items-center justify-center text-white text-xs font-semibold gap-1 opacity-0 group-hover:opacity-100 transition-all"
+                    style={{ backgroundColor: 'rgba(0,0,0,0.55)' }}
+                  >
+                    {avatarLoading
+                      ? <span className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                      : <><span style={{ fontSize: 20 }}>📷</span><span>Change</span></>}
+                  </button>
+                  <input ref={fileRef} type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
+                </>
               )}
             </div>
-          </Link>
 
-          {/* Connection indicator */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            <div className="w-2 h-2 rounded-full transition-colors"
-              style={{
-                backgroundColor: connected ? '#4ade80' : 'var(--text-muted)',
-                boxShadow: connected ? '0 0 6px #4ade80' : 'none',
-              }} />
-            <span className="text-xs hidden sm:block" style={{ color: 'var(--text-muted)' }}>
-              {connected ? 'Live' : 'Connected'}
-            </span>
+            {/* Action buttons */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Message button — logged-in users viewing someone else */}
+              {loggedIn && !isOwner && (
+                <button
+                  onClick={() => router.push(`/messages/${profile?.username}`)}
+                  className="flex items-center gap-2 text-sm font-semibold px-4 py-2 rounded-xl text-white transition-all hover:scale-105 active:scale-95 shadow-md"
+                  style={{ background: 'linear-gradient(135deg,#6366f1,#ec4899)', boxShadow: '0 2px 12px rgba(99,102,241,0.35)' }}
+                >
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width={16} height={16}>
+                    <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                      d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+                  </svg>
+                  Message
+                </button>
+              )}
+
+              {/* Not logged in */}
+              {!loggedIn && (
+                <Link href="/login"
+                  className="text-sm font-medium px-4 py-2 rounded-xl transition-all hover:scale-105"
+                  style={{ border: '1.5px solid var(--border)', color: 'var(--text-secondary)' }}>
+                  Log in to message
+                </Link>
+              )}
+
+              {/* Edit profile — owner only */}
+              {isOwner && !editing && (
+                <button onClick={() => setEditing(true)} className="btn-secondary text-sm px-4 py-2">
+                  ✏️ Edit Profile
+                </button>
+              )}
+            </div>
           </div>
-        </div>
 
-        {/* ── Messages ── */}
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1"
-          style={{ backgroundColor: 'var(--bg-secondary)' }}>
-          {rendered.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-center animate-fade-in">
-              <Avatar url={otherUser?.avatar_url} username={otherUser?.username || ''} size="lg" className="mb-4" />
-              <p className="font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
-                u/{otherUser?.username}
-              </p>
-              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                Say hello! This is the start of your conversation.
-              </p>
+          {avatarError && <p className="text-red-500 text-xs mb-3 animate-fade-in">⚠️ {avatarError}</p>}
+
+          <h1 className="text-2xl font-bold mb-3" style={{ color: 'var(--text-primary)' }}>
+            u/{profile?.username}
+          </h1>
+
+          {/* Stats */}
+          <div className="flex gap-6 mb-4">
+            {[
+              { label: 'Karma',  value: profile?.karma ?? 0,      color: '#f97316' },
+              { label: 'Posts',  value: profile?.post_count ?? 0, color: 'var(--text-primary)' },
+              { label: 'Joined', value: profile?.created_at
+                  ? new Date(profile.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+                  : '—', color: 'var(--text-primary)' },
+            ].map(stat => (
+              <div key={stat.label}>
+                <div className="text-lg font-bold" style={{ color: stat.color }}>{stat.value}</div>
+                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{stat.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Bio */}
+          {editing ? (
+            <div className="space-y-2 animate-fade-in">
+              <textarea
+                value={bio}
+                onChange={e => { setBio(e.target.value); setBioError(''); }}
+                placeholder="Tell the community about yourself..."
+                maxLength={300} rows={3}
+                className="input-base" style={{ resize: 'none' }}
+              />
+              <div className="flex items-center justify-between">
+                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{bio.length}/300</span>
+                {bioError && <span className="text-xs text-red-500">⚠️ {bioError}</span>}
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => { setEditing(false); setBio(profile?.bio || ''); }} className="btn-secondary flex-1 py-2 text-sm">Cancel</button>
+                <button onClick={saveBio} disabled={bioLoading} className="btn-primary flex-1 py-2 text-sm">
+                  {bioLoading ? 'Saving...' : '💾 Save Bio'}
+                </button>
+              </div>
             </div>
-          ) : rendered.map((item, i) => {
-            if (item.type === 'date') return (
-              <div key={`d-${i}`} className="flex items-center gap-3 my-4">
-                <div className="flex-1 h-px" style={{ backgroundColor: 'var(--border)' }} />
-                <span className="text-xs px-3 py-1 rounded-full font-medium"
-                  style={{ backgroundColor: 'var(--bg-card)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
-                  {item.label}
-                </span>
-                <div className="flex-1 h-px" style={{ backgroundColor: 'var(--border)' }} />
-              </div>
-            );
-
-            const { msg } = item;
-            const isMine  = msg.is_mine;
-
-            return (
-              <div key={msg.id}
-                className={`flex items-end gap-2 animate-fade-in ${isMine ? 'justify-end' : 'justify-start'}`}>
-                {!isMine && (
-                  <Avatar url={otherUser?.avatar_url} username={username} size="xs" className="mb-1 shrink-0" />
-                )}
-                <div className="max-w-[72%] group">
-                  <div className="px-4 py-2.5 rounded-2xl text-sm leading-relaxed shadow-sm"
-                    style={isMine ? {
-                      background: 'linear-gradient(135deg, #f97316, #ec4899)',
-                      color: 'white',
-                      borderBottomRightRadius: 4,
-                    } : {
-                      backgroundColor: 'var(--bg-card)',
-                      color: 'var(--text-primary)',
-                      border: '1px solid var(--border)',
-                      borderBottomLeftRadius: 4,
-                    }}>
-                    {msg.content}
-                  </div>
-                  <p className={`text-xs mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity ${isMine ? 'text-right' : ''}`}
-                    style={{ color: 'var(--text-muted)' }}>
-                    {timeAgo(msg.created_at)}
-                  </p>
-                </div>
-                {isMine && (
-                  <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold mb-1 shrink-0"
-                    style={{ background: 'linear-gradient(135deg, #f97316, #ec4899)' }}>
-                    {currentUser[0]?.toUpperCase()}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          <div ref={bottomRef} />
+          ) : (
+            <p className="text-sm leading-relaxed"
+              style={{ color: profile?.bio ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
+              {profile?.bio || (isOwner
+                ? '✏️ No bio yet — click Edit Profile to add one.'
+                : 'This user has no bio yet.')}
+            </p>
+          )}
         </div>
+      </div>
 
-        {/* ── Input ── */}
-        <div className="px-4 py-3 border-t shrink-0"
-          style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)' }}>
-          <form onSubmit={sendMessage} className="flex items-end gap-2">
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Type a message... (Enter to send)"
-              rows={1}
-              maxLength={1000}
-              className="flex-1 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 transition-all"
-              style={{
-                backgroundColor: 'var(--bg-secondary)',
-                border: '1.5px solid var(--border)',
-                color: 'var(--text-primary)',
-                resize: 'none',
-                maxHeight: 120,
-              }}
-            />
-            <button type="submit" disabled={!input.trim() || sending}
-              className="w-11 h-11 rounded-2xl flex items-center justify-center text-white transition-all hover:scale-110 active:scale-95 disabled:opacity-40 shadow-md shrink-0"
-              style={{ background: 'linear-gradient(135deg, #f97316, #ec4899)' }}>
-              {sending ? (
-                <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-              ) : (
-                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width={18} height={18}>
-                  <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
-                </svg>
-              )}
-            </button>
-          </form>
-          <p className="text-xs mt-1 text-right" style={{ color: 'var(--text-muted)' }}>
-            {input.length}/1000 · Shift+Enter for new line
-          </p>
-        </div>
+      {/* Posts */}
+      <div>
+        <h2 className="text-base font-bold mb-3" style={{ color: 'var(--text-primary)' }}>
+          Posts by u/{profile?.username}
+          <span className="ml-2 text-sm font-normal" style={{ color: 'var(--text-muted)' }}>({profile?.post_count})</span>
+        </h2>
+
+        {profile?.posts.length === 0 ? (
+          <div className="rounded-3xl border p-12 text-center animate-fade-in"
+            style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+            <div className="text-5xl mb-3 animate-pop-in">📭</div>
+            <p className="font-medium" style={{ color: 'var(--text-primary)' }}>No posts yet</p>
+            {isOwner && (
+              <Link href="/submit" className="btn-primary inline-block mt-4 text-sm px-6">Create your first post</Link>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-3 stagger">
+            {profile?.posts.map((post, i) => <PostCard key={post.id} post={post} index={i} />)}
+          </div>
+        )}
       </div>
     </div>
   );

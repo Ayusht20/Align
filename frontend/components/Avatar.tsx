@@ -22,18 +22,24 @@ interface AvatarProps {
 }
 
 export default function Avatar({ url, username, size = 'md', className = '' }: AvatarProps) {
-  const gradient = GRADIENTS[username.charCodeAt(0) % GRADIENTS.length];
   const sizeClass = SIZES[size];
+  
+  // Clean the username string and provide a safe fallback if it's empty
+  const cleanUsername = username?.trim() || '?';
 
   if (url) {
     return (
       <img
         src={url}
-        alt={username}
+        alt={cleanUsername}
         className={`${sizeClass} rounded-full object-cover ring-2 ring-orange-400/30 shadow ${className}`}
       />
     );
   }
+
+  // Safe fallback calculation so charCodeAt never returns NaN
+  const charCode = cleanUsername !== '?' ? cleanUsername.charCodeAt(0) : 63;
+  const gradient = GRADIENTS[charCode % GRADIENTS.length];
 
   return (
     <div
@@ -42,12 +48,17 @@ export default function Avatar({ url, username, size = 'md', className = '' }: A
         background: getGradientStyle(gradient),
       }}
     >
-      {username[0]?.toUpperCase() ?? '?'}
+      {cleanUsername[0].toUpperCase()}
     </div>
   );
 }
 
 function getGradientStyle(gradientClasses: string): string {
+  // CRITICAL FIX: If gradientClasses is missing or undefined, return a default fallback gradient instantly
+  if (!gradientClasses) {
+    return 'linear-gradient(135deg, #fb923c, #ec4899)';
+  }
+
   const colorMap: Record<string, string> = {
     'from-orange-400': '#fb923c',
     'from-blue-400':   '#60a5fa',
