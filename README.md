@@ -6,6 +6,7 @@
   **A modern full-stack community discussion platform**
 
   [![Frontend!](https://img.shields.io/badge/Live-Demo-orange?style=flat-square)](https://align-one-tau.vercel.app)
+  
   [![Backend](https://img.shields.io/badge/Live-Demo-orange?style=flat-square)](https://align-tzrk.onrender.com)
   
   [![API Docs](https://img.shields.io/badge/API-Docs-blue?style=flat-square)](https://align-backend.onrender.com/docs)
