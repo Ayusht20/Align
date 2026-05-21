@@ -5,9 +5,9 @@
 
   **A modern full-stack community discussion platform**
 
-  [![Live Demo]
-   Frontend : https://align-one-tau.vercel.app
-    Backend:https://align-tzrk.onrender.com
+  [![Frontend!](https://img.shields.io/badge/Live-Demo-orange?style=flat-square)](https://align-one-tau.vercel.app)
+  [![Backend](https://img.shields.io/badge/Live-Demo-orange?style=flat-square)](https://align-tzrk.onrender.com)
+  
   [![API Docs](https://img.shields.io/badge/API-Docs-blue?style=flat-square)](https://align-backend.onrender.com/docs)
   [![GitHub](https://img.shields.io/badge/GitHub-Repo-black?style=flat-square&logo=github)](https://github.com/Ayusht20/Align)
 
