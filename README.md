@@ -5,8 +5,8 @@
 
   **A modern full-stack community discussion platform**
 
-  [![Frontend!](https://img.shields.io/badge/Frontend-orange?style=flat-square)](https://align-one-tau.vercel.app)
-  [![Backend](https://img.shields.io/badge/Backend-orange?style=flat-square)](https://align-tzrk.onrender.com)
+  [![Frontend!](https://img.shields.io/badge/Frontend(Live-link)-orange?style=flat-square)](https://align-one-tau.vercel.app)
+  [![Backend](https://img.shields.io/badge/Backend(Live-link)-orange?style=flat-square)](https://align-tzrk.onrender.com)
   
   [![API Docs](https://img.shields.io/badge/API-Docs-blue?style=flat-square)](https://align-backend.onrender.com/docs)
   [![GitHub](https://img.shields.io/badge/GitHub-Repo-black?style=flat-square&logo=github)](https://github.com/Ayusht20/Align)
