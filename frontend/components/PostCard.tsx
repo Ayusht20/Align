@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import api from '@/lib/api';
 import { isLoggedIn } from '@/lib/auth';
+import { supabase } from '@/lib/supabase';
 
 export interface PostData {
   id: number; title: string; content?: string; image_url?: string;
@@ -13,9 +14,9 @@ export interface PostData {
 
 function timeAgo(d: string) {
   const s = Math.floor((Date.now() - new Date(d).getTime()) / 1000);
-  if (s < 60)   return 'just now';
-  if (s < 3600) return `${Math.floor(s/60)}m ago`;
-  if (s < 86400)return `${Math.floor(s/3600)}h ago`;
+  if (s < 60)    return 'just now';
+  if (s < 3600)  return `${Math.floor(s/60)}m ago`;
+  if (s < 86400) return `${Math.floor(s/3600)}h ago`;
   return `${Math.floor(s/86400)}d ago`;
 }
 
@@ -24,11 +25,34 @@ export default function PostCard({ post, index = 0 }: { post: PostData; index?: 
   const [userVote, setUserVote] = useState<'up'|'down'|null>(null);
   const [anim,     setAnim]     = useState<'up'|'down'|null>(null);
 
+  useEffect(() => {
+    // Subscribe to realtime vote changes for this post
+    const channel = supabase
+      .channel(`votes-post-${post.id}`)
+      .on('postgres_changes', {
+        event: '*',              // INSERT, UPDATE, DELETE
+        schema: 'public',
+        table: 'votes',
+        filter: `post_id=eq.${post.id}`,
+      }, async () => {
+        // Refetch the post to get accurate vote count
+        // We don't compute locally because multiple users could vote simultaneously
+        try {
+          const r = await api.get(`/api/posts/${post.id}`);
+          setCount(r.data.vote_count);
+        } catch {}
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [post.id]);
+
   async function vote(type: 'up'|'down') {
     if (!isLoggedIn()) { window.location.href = '/login'; return; }
     try {
       await api.post('/api/votes/', { post_id: post.id, vote_type: type });
       setAnim(type); setTimeout(() => setAnim(null), 300);
+      // Optimistic update — realtime will confirm with accurate count
       if (userVote === type) {
         setCount(c => type === 'up' ? c-1 : c+1); setUserVote(null);
       } else {
@@ -51,7 +75,7 @@ export default function PostCard({ post, index = 0 }: { post: PostData; index?: 
           <button onClick={() => vote('up')}
             className={`text-lg transition-all hover:scale-125 active:scale-95 ${anim === 'up' ? 'animate-vote-up' : ''}`}
             style={{ color: userVote === 'up' ? '#f97316' : 'var(--text-muted)' }}>▲</button>
-          <span className="text-xs font-bold tabular-nums"
+          <span className="text-xs font-bold tabular-nums transition-all duration-300"
             style={{ color: count > 0 ? '#f97316' : count < 0 ? '#6366f1' : 'var(--text-muted)' }}>
             {count}
           </span>
