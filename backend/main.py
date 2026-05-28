@@ -1,8 +1,12 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from database import engine, Base
 
-# Import all models so SQLAlchemy registers them before create_all
+from fastapi import FastAPI, Depends
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+from database import engine, Base, get_db  # Added get_db here
+
+
+
 import models  # noqa: F401
 
 # Import routers
@@ -43,8 +47,28 @@ app.include_router(notifications.router)
 app.include_router(search.router)
 
 
+
 @app.get("/", tags=["Health"])
 def root():
     return {"status": "ok", "app": "Align API"}
 
+
+
+@app.get("/health", tags=["Health"])
+def health_check(db: Session = Depends(get_db)):
+    try:
+        # Runs a tiny 1-second check to tell Supabase we are still active
+        db.execute(text("SELECT 1"))
+        
+        return {
+            "status": "UP",
+            "database": "CONNECTED",
+            "message": "Keep awake channel active"
+        }
+    except Exception as e:
+        return {
+            "status": "DOWN",
+            "database": "ERROR",
+            "error": str(e)
+        }
 
